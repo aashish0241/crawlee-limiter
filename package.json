@@ -1,6 +1,6 @@
 {
   "name": "crawlee-limiter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A lightweight library to limit the number of items scraped before stopping the Crawlee crawler",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -23,12 +23,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/jyabatech/crawlee-limiter"
+    "url": "https://github.com/aashish0241/crawlee-limiter"
   },
   "bugs": {
-    "url": "https://github.com/jyabatech/crawlee-limiter/issues"
+    "url": "https://github.com/aashish0241/crawlee-limiter/issues"
   },
-  "homepage": "https://github.com/jyabatech/crawlee-limiter#readme",
+  "homepage": "https://github.com/aashish0241/crawlee-limiter#readme",
   "author": "JYABATech",
   "license": "MIT",
   "peerDependencies": {
