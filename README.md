@@ -1,13 +1,16 @@
 # crawlee-limiter
 
-A lightweight library to limit the number of items scraped before stopping the Crawlee crawler.
+A lightweight library to limit the number of items scraped before stopping the Crawlee crawler. Uses the **Apify dataset** directly for pushing data.
 
 ## Features
 
 - Simple function-based API
-- Auto-stops crawler when limit reached
+- Pushes data directly via Apify `Dataset.pushData()` — no crawler dataset method needed
+- Auto-stops crawler when limit is reached
+- Clips arrays to never exceed the item limit
+- Safe under concurrent requests (race-condition-free count tracking)
 - Supports single items or arrays
-- Works with Playwright, Puppeteer, and Basic crawlers
+- Works with **ALL** Crawlee crawler types (structural/duck typing)
 - TypeScript support
 
 ## Installation
@@ -18,10 +21,10 @@ npm install crawlee-limiter
 yarn add crawlee-limiter
 ```
 
-Requires `crawlee` as a peer dependency:
+Requires `apify` as a peer dependency:
 
 ```bash
-npm install crawlee
+npm install apify
 ```
 
 ## Quick Start
@@ -38,38 +41,40 @@ router.addHandler('DETAIL', async ({ page, crawler }) => {
         url: page.url() 
     };
 
-    // Push data and stop when limit reached
+    // Push data to Apify dataset and stop when limit reached
     await limitPush(data, 50, crawler);
 });
 
-router.addDefaultHandler(async ({ page, request }) => {
-    // Click and follow links to detail pages
+router.addDefaultHandler(async ({ page }) => {
     await page.click('a.product-link');
 });
 ```
 
-## Usage with Puppeteer
+## Usage with CheerioCrawler
 
 ```typescript
-import { createPuppeteerRouter } from 'crawlee';
+import { CheerioCrawler, createCheerioRouter } from 'crawlee';
 import { limitPush } from 'crawlee-limiter';
 
-export const router = createPuppeteerRouter();
+const router = createCheerioRouter();
 
-router.addHandler('DETAIL', async ({ page, crawler }) => {
+router.addDefaultHandler(async ({ $, request, crawler }) => {
     const data = { 
-        title: await page.title(),
-        url: page.url() 
+        title: $('title').text(),
+        url: request.url 
     };
 
     await limitPush(data, 100, crawler);
 });
+
+const crawler = new CheerioCrawler({ router });
+await crawler.run(['https://example.com']);
 ```
 
 ## Full Example
 
 ```typescript
-import { PlaywrightCrawler, createPlaywrightRouter, Dataset } from 'crawlee';
+import { PlaywrightCrawler, createPlaywrightRouter } from 'crawlee';
 import { limitPush, reset, getCount, getLimit, isLimitReached } from 'crawlee-limiter';
 
 const router = createPlaywrightRouter();
@@ -85,7 +90,7 @@ router.addHandler('DETAIL', async ({ page, crawler }) => {
     console.log(`Progress: ${getCount(crawler)}/${getLimit(crawler)}`);
 });
 
-router.addDefaultHandler(async ({ page, request }) => {
+router.addDefaultHandler(async ({ page }) => {
     await page.click('a.product-link');
 });
 
@@ -109,25 +114,27 @@ reset(crawler);
 
 ### `limitPush(data, max, crawler)`
 
-Push data to dataset and stop crawler when limit reached.
+Push data to the Apify dataset and stop the crawler when the limit is reached.
 
-- `data` - Object or array of objects to save
-- `max` - Maximum number of items to scrape  
-- `crawler` - The Crawlee crawler instance
+- `data` — Object or array of objects to save
+- `max` — Maximum number of items to scrape
+- `crawler` — Any crawler instance with a `stop()` method
 
-Returns `true` if data was pushed, `false` if limit already reached.
+Returns `true` if data was pushed, `false` if the limit was already reached.
+
+> **Note:** When passing an array, it is automatically clipped to the remaining slots so the total never exceeds `max`.
 
 ### `reset(crawler)`
 
 Reset the counter for a crawler. Use this before starting a new crawl.
 
 ```typescript
-reset(crawler); // Reset counter to 0
+reset(crawler);
 ```
 
 ### `getCount(crawler)`
 
-Get current item count for a crawler.
+Get the current item count.
 
 ```typescript
 const count = getCount(crawler); // e.g., 25
@@ -135,7 +142,7 @@ const count = getCount(crawler); // e.g., 25
 
 ### `getLimit(crawler)`
 
-Get the limit set for a crawler.
+Get the configured limit.
 
 ```typescript
 const limit = getLimit(crawler); // e.g., 50
@@ -154,9 +161,10 @@ if (isLimitReached(crawler)) {
 ## How It Works
 
 1. First call to `limitPush` initializes the counter with the `max` value
-2. Each push increments the counter (array length counts as multiple items)
-3. When counter reaches limit, the crawler automatically stops
-4. Use `reset()` to clear the counter for a new crawl
+2. The count is incremented **before** the async push to prevent race conditions in concurrent request handlers
+3. Arrays are clipped to the remaining available slots — the total will never exceed `max`
+4. When the count reaches the limit, the crawler is automatically stopped
+5. Use `reset()` to clear the counter before a new crawl
 
 ## License
 

@@ -1,3 +1,4 @@
+import { Dataset } from "apify";
 const crawlerState = new WeakMap();
 export async function limitPush(data, max, crawler) {
     let state = crawlerState.get(crawler);
@@ -5,13 +6,17 @@ export async function limitPush(data, max, crawler) {
         state = { count: 0, limit: max };
         crawlerState.set(crawler, state);
     }
-    if (state.count >= state.limit) {
+    const remaining = state.limit - state.count;
+    if (remaining <= 0) {
         return false;
     }
-    const itemsToAdd = Array.isArray(data) ? data.length : 1;
-    const dataset = await crawler.getDataset();
-    await dataset.pushData(data);
+    // Clip array to remaining slots so we never exceed the limit
+    const dataToSend = Array.isArray(data) ? data.slice(0, remaining) : data;
+    const itemsToAdd = Array.isArray(dataToSend) ? dataToSend.length : 1;
+    // Increment count BEFORE the async push to prevent race conditions
+    // when multiple concurrent requests pass the limit check simultaneously
     state.count += itemsToAdd;
+    await Dataset.pushData(dataToSend);
     if (state.count >= state.limit) {
         console.log(`[Limiter] Reached ${state.limit} items. Stopping crawler...`);
         await crawler.stop();

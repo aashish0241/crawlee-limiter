@@ -1,11 +1,19 @@
-import type { BasicCrawler, Dictionary } from "crawlee";
+import { Dataset } from "apify";
 
-const crawlerState = new WeakMap<BasicCrawler, { count: number; limit: number }>();
+// Minimal interface for any Crawlee crawler
+interface AnyCrawler {
+  stop(): Promise<void>;
+}
 
-export async function limitPush(
-  data: Dictionary | Dictionary[],
+const crawlerState = new WeakMap<
+  AnyCrawler,
+  { count: number; limit: number }
+>();
+
+export async function limitPush<T extends AnyCrawler>(
+  data: Record<string, any> | Record<string, any>[],
   max: number,
-  crawler: BasicCrawler
+  crawler: T,
 ): Promise<boolean> {
   let state = crawlerState.get(crawler);
 
@@ -14,16 +22,20 @@ export async function limitPush(
     crawlerState.set(crawler, state);
   }
 
-  if (state.count >= state.limit) {
+  const remaining = state.limit - state.count;
+  if (remaining <= 0) {
     return false;
   }
 
-  const itemsToAdd = Array.isArray(data) ? data.length : 1;
+  // Clip array to remaining slots so we never exceed the limit
+  const dataToSend = Array.isArray(data) ? data.slice(0, remaining) : data;
+  const itemsToAdd = Array.isArray(dataToSend) ? dataToSend.length : 1;
 
-  const dataset = await crawler.getDataset();
-  await dataset.pushData(data);
-
+  // Increment count BEFORE the async push to prevent race conditions
+  // when multiple concurrent requests pass the limit check simultaneously
   state.count += itemsToAdd;
+
+  await Dataset.pushData(dataToSend);
 
   if (state.count >= state.limit) {
     console.log(`[Limiter] Reached ${state.limit} items. Stopping crawler...`);
@@ -34,21 +46,21 @@ export async function limitPush(
   return true;
 }
 
-export function reset(crawler: BasicCrawler): void {
+export function reset<T extends AnyCrawler>(crawler: T): void {
   crawlerState.delete(crawler);
 }
 
-export function getCount(crawler: BasicCrawler): number {
+export function getCount<T extends AnyCrawler>(crawler: T): number {
   const state = crawlerState.get(crawler);
   return state?.count ?? 0;
 }
 
-export function getLimit(crawler: BasicCrawler): number {
+export function getLimit<T extends AnyCrawler>(crawler: T): number {
   const state = crawlerState.get(crawler);
   return state?.limit ?? 0;
 }
 
-export function isLimitReached(crawler: BasicCrawler): boolean {
+export function isLimitReached<T extends AnyCrawler>(crawler: T): boolean {
   const state = crawlerState.get(crawler);
   return state ? state.count >= state.limit : false;
 }
